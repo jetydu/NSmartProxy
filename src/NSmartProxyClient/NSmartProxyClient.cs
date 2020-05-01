@@ -13,12 +13,17 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using log4net.Config;
+using NSmartProxy.Data.Models;
 using Exception = System.Exception;
+using NSmartProxy.Shared;
+using Protocol = NSmartProxy.Data.Protocol;
+using NSmartProxy.Infrastructure;
 
 namespace NSmartProxy
 {
     class NSmartProxyClient
     {
+        #region logger
         public class Log4netLogger : INSmartLogger
         {
             public void Debug(object message)
@@ -30,7 +35,7 @@ namespace NSmartProxy
             public void Error(object message, Exception ex)
             {
                 //Logger.Debug(message);
-                Logger.Error(message,ex);
+                Logger.Error(message, ex);
             }
 
             public void Info(object message)
@@ -38,26 +43,31 @@ namespace NSmartProxy
                 Logger.Info(message);
             }
         }
+        #endregion
 
         public static ILog Logger;
         public static IConfigurationRoot Configuration { get; set; }
-        static void Main(string[] args)
+        private static LoginInfo _currentLoginInfo;
+        private static readonly string ConfigFilePath = ConfigHelper.AppSettingFullPath;
+        public void Start(string[] args)
         {
+            //appSettingFilePath = Directory.GetCurrentDirectory() + "/appsettings.json";
             //log
             var loggerRepository = LogManager.CreateRepository("NSmartClientRouterRepository");
             XmlConfigurator.Configure(loggerRepository, new FileInfo("log4net.config"));
-            //BasicConfigurator.Configure(loggerRepository);
             NSmartProxyClient.Logger = LogManager.GetLogger(loggerRepository.Name, "NSmartServerClient");
             if (!loggerRepository.Configured) throw new Exception("log config failed.");
-            //Thread.Sleep(3000);
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Logger.Info("*** NSmart ClientRouter v0.2 ***");
 
-            var builder = new ConfigurationBuilder()
-               .SetBasePath(Directory.GetCurrentDirectory())
-               .AddJsonFile("appsettings.json");
+            //用户登录 e.g.: ./NSmartProxyClient -u admin -p admin
+            if (args.Length == 4)
+            {
+                _currentLoginInfo = new LoginInfo();
+                _currentLoginInfo.UserName = args[1];
+                _currentLoginInfo.UserPwd = args[3];
+            }
 
-            Configuration = builder.Build();
+            Logger.Info($"*** {NSPVersion.NSmartProxyClientName} ***");
 
             //start clientrouter.
             try
@@ -68,9 +78,9 @@ namespace NSmartProxy
             {
                 Logger.Error(e.Message);
             }
-
-            Logger.Info("Client terminated,press any key to continue.");
             Console.Read();
+            Logger.Info("Client terminated,press any key to continue.");
+
         }
 
         private static async Task StartClient()
@@ -78,8 +88,13 @@ namespace NSmartProxy
 
             Router clientRouter = new Router(new Log4netLogger());
             //read config from config file.
-            SetConfig(clientRouter);// clientRouter.SetConifiguration();
-            Task tsk = clientRouter.ConnectToProvider();
+            clientRouter.SetConfiguration(ConfigHelper.ReadAllConfig<NSPClientConfig>(ConfigFilePath));
+            if (_currentLoginInfo != null)
+            {
+                clientRouter.SetLoginInfo(_currentLoginInfo);
+            }
+
+            Task tsk = clientRouter.Start(true);
             try
             {
                 await tsk;
@@ -92,26 +107,11 @@ namespace NSmartProxy
 
         }
 
-        private static void SetConfig(Router clientRouter)
+        public void Stop()
         {
-            Config config = new Config();
-            config.ProviderAddress = Configuration.GetSection("ProviderAddress").Value;
-            config.ProviderPort = int.Parse(Configuration.GetSection("ProviderPort").Value);
-            config.ProviderConfigPort = int.Parse(Configuration.GetSection("ProviderConfigPort").Value);
-            var configClients = Configuration.GetSection("Clients").GetChildren();
-            foreach (var cli in configClients)
-            {
-                int confConsumerPort = 0;
-                if (cli["ConsumerPort"] != null) confConsumerPort = int.Parse(cli["ConsumerPort"]);
-                config.Clients.Add(new ClientApp
-                {
-                    IP = cli["IP"],
-                    TargetServicePort = int.Parse(cli["TargetServicePort"]),
-                    ConsumerPort = confConsumerPort
-                });
-            }
-            // Configuration.GetSection("1").
-            clientRouter.SetConifiguration(config);
+            //
+            Console.WriteLine(NSPVersion.NSmartProxyServerName + " STOPPED.");
+            Environment.Exit(0);
         }
     }
 }

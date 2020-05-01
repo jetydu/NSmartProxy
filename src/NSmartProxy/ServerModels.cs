@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
+using NSmartProxy.Infrastructure;
 
 namespace NSmartProxy
 {
@@ -11,21 +14,62 @@ namespace NSmartProxy
         public int AppID;
     }
 
-    public class TcpTunnel
+    /// <summary>
+    /// nspclient集合 clientid->NSPClient
+    /// </summary>
+    public class NSPClientCollection:IEnumerable<NSPClient>
     {
-        public TcpClient ConsumerClient;
-        public TcpClient ClientServerClient;
+        private ConcurrentDictionary<int, NSPClient> ClientMap;
+
+        public NSPClient this[int index]
+        {
+            get => ClientMap[index];
+            set => ClientMap[index] = value;
+        }
+        public NSPClientCollection()
+        {
+            ClientMap = new ConcurrentDictionary<int, NSPClient>();
+        }
+
+        public bool ContainsKey(int key)
+        {
+            return ClientMap.ContainsKey(key);
+        }
+
+        public void RegisterNewClient(int key)
+        {
+            
+                ClientMap.TryAdd(key,new NSPClient()
+                {
+                    ClientID = key,
+                    LastUpdateTime = DateTime.Now
+                });
+        }
+
+        public void UnRegisterClient(int key)
+        {
+            //关闭所有连接
+            //int closedClients = ClientMap[key].Close();
+            this.ClientMap.TryRemove(key,out _);
+            //停止端口侦听
+            //return closedClients;
+        }
+
+        public IEnumerator<NSPClient> GetEnumerator()
+        {
+            return ClientMap.Values.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
     }
 
-    public class AppModel
-    {
-        public ClientIDAppID ClientIdAppId;
-        public List<TcpTunnel> Tunnels;          //正在使用的隧道
-        public List<TcpClient> ReverseClients;  //反向连接的socket
-    }
 
     public class AppChangedEventArgs : EventArgs
     {
-        public ClientIDAppID App;
+        public NSPApp App;
     }
+
 }
